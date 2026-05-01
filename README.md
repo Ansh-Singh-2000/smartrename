@@ -2,6 +2,19 @@
 
 An AI-powered file renaming tool that understands natural language. Stop wasting time on repetitive file renames!
 
+## Download 📥
+
+**Want to skip the setup?** Download the standalone executable:
+
+👉 [SmartRename.exe (10.3 MB)](https://github.com/Ansh-Singh-2000/smartrename/releases/latest)
+
+- ✅ No Python installation required
+- ✅ No dependencies to install
+- ✅ Just download and run
+- ✅ Works on any Windows PC
+
+On first run, you'll be prompted for a free Groq API key (takes 1 minute to get).
+
 ## Features ✨
 
 - **Natural Language Interface** - Just describe what you want: "capitalize first letter of all files ending with 5"
@@ -11,6 +24,16 @@ An AI-powered file renaming tool that understands natural language. Stop wasting
 - **Production Ready** - Comprehensive error handling and edge case coverage
 
 ## Quick Start 🏃
+
+### Option 1: Use the Executable (Easiest)
+
+1. Download [SmartRename.exe](https://github.com/Ansh-Singh-2000/smartrename/releases/latest)
+2. Place it in any folder with files you want to rename
+3. Double-click to run
+4. Enter your Groq API key when prompted (first run only)
+5. Start renaming!
+
+### Option 2: Run from Source
 
 ### 1. Install Dependencies
 
