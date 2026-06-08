@@ -30,6 +30,9 @@ wheels/
 *.manifest
 *.spec
 
+# Executables (keep versioned ones in executables/ folder)
+SmartRename.exe
+
 # Logs
 rename_log_*.txt
 *.log

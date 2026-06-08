@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Smart Rename - AI-powered file renaming tool
 Author: Ansh Singh
@@ -13,8 +14,14 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from groq import Groq
 
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 # Constants
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 AUTHOR = "Ansh Singh"
 WEBSITE = "anshverse.in"
 MAX_FILES_WARNING = 100
@@ -25,15 +32,16 @@ CONFIG_DIR = Path.home() / ".smartrename"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 class SmartRename:
-    def __init__(self):
+    def __init__(self, target_dir: Optional[str] = None):
         self.api_key = self.load_api_key()
         if not self.api_key:
             self.api_key = self.prompt_and_save_api_key()
         
         self.model = self.load_model()
         self.client = Groq(api_key=self.api_key)
-        self.current_dir = Path.cwd()
+        self.current_dir = Path(target_dir) if target_dir else Path.cwd()
         self.files = []
+        self.include_folders = False
         self.conversation_history = []
     
     def load_api_key(self) -> Optional[str]:
@@ -176,28 +184,47 @@ class SmartRename:
                 print()
         
     def scan_files(self) -> List[str]:
-        """Scan current directory for files, excluding system and hidden files."""
+        """Scan current directory for files/folders, excluding system and hidden items."""
         try:
             all_items = os.listdir(self.current_dir)
-            files = []
+            items = []
             
             for item in all_items:
                 path = self.current_dir / item
-                # Skip directories, hidden files, and excluded patterns
-                if path.is_file() and not item.startswith('.'):
-                    if not any(pattern in item for pattern in EXCLUDED_PATTERNS):
-                        files.append(item)
+                if item.startswith('.') or any(pattern in item for pattern in EXCLUDED_PATTERNS):
+                    continue
+                
+                if self.include_folders:
+                    # Include both files and folders
+                    items.append(item)
+                else:
+                    # Only files
+                    if path.is_file():
+                        items.append(item)
             
-            return sorted(files)
+            return sorted(items)
         except Exception as e:
             raise RuntimeError(f"Failed to scan directory: {e}")
     
+    def has_folders(self) -> bool:
+        """Check if directory has any subfolders."""
+        try:
+            all_items = os.listdir(self.current_dir)
+            for item in all_items:
+                path = self.current_dir / item
+                if path.is_dir() and not item.startswith('.') and not any(pattern in item for pattern in EXCLUDED_PATTERNS):
+                    return True
+            return False
+        except Exception:
+            return False
+    
     def build_system_prompt(self, files: List[str]) -> str:
         """Build the system prompt with instructions and file list."""
-        return f"""You are a smart file renaming assistant. Your job is to help users rename files based on their natural language requests.
+        item_type = "files/folders" if self.include_folders else "files"
+        return f"""You are a smart file renaming assistant. Your job is to help users rename {item_type} based on their natural language requests.
 
 CURRENT DIRECTORY: {self.current_dir}
-FILES IN DIRECTORY ({len(files)} files):
+ITEMS IN DIRECTORY ({len(files)} {item_type}):
 {chr(10).join(f"  - {f}" for f in files)}
 
 INSTRUCTIONS:
@@ -252,18 +279,38 @@ When ready to rename, output ONLY the JSON object, nothing else."""
         existing_files = set(self.files)
         issues = []
         
+        # On Windows, filesystem is case-insensitive
+        case_sensitive = sys.platform != 'win32'
+        
         # Check for duplicate new names
         seen = set()
+        seen_lower = set()  # For case-insensitive check
         for name in new_names:
-            if name in seen:
+            check_name = name if case_sensitive else name.lower()
+            if check_name in (seen if case_sensitive else seen_lower):
                 issues.append(f"Duplicate target name: {name}")
-            seen.add(name)
+            if case_sensitive:
+                seen.add(name)
+            else:
+                seen_lower.add(check_name)
         
         # Check if new name already exists (and isn't being renamed)
         old_names = set(r["old"] for r in renames)
+        old_names_lower = set(r["old"].lower() for r in renames) if not case_sensitive else set()
+        
         for rename in renames:
-            if rename["new"] in existing_files and rename["new"] not in old_names:
-                issues.append(f"File already exists: {rename['new']}")
+            # Skip if it's just a case change of the same file (allowed on Windows)
+            if not case_sensitive and rename["old"].lower() == rename["new"].lower():
+                continue
+            
+            # Check collision
+            if case_sensitive:
+                if rename["new"] in existing_files and rename["new"] not in old_names:
+                    issues.append(f"File already exists: {rename['new']}")
+            else:
+                # Case-insensitive check for Windows
+                if rename["new"].lower() in [f.lower() for f in existing_files] and rename["new"].lower() not in old_names_lower:
+                    issues.append(f"File already exists: {rename['new']}")
         
         # Check for invalid characters
         invalid_chars = r'\/:*?"<>|'
@@ -299,19 +346,85 @@ When ready to rename, output ONLY the JSON object, nothing else."""
         success_count = 0
         errors = []
         
-        for rename in renames:
-            old_path = self.current_dir / rename["old"]
-            new_path = self.current_dir / rename["new"]
+        # On Windows, filesystem is case-insensitive
+        case_sensitive = sys.platform != 'win32'
+        
+        # Create a mapping to handle rename chains
+        rename_map = {r["old"]: r["new"] for r in renames}
+        pending_renames = renames.copy()
+        completed = set()
+        
+        # Handle renames, dealing with potential chains and conflicts
+        max_iterations = len(renames) + 1
+        iteration = 0
+        
+        while pending_renames and iteration < max_iterations:
+            iteration += 1
+            made_progress = False
+            still_pending = []
             
-            try:
-                if not old_path.exists():
-                    errors.append(f"File not found: {rename['old']}")
-                    continue
+            for rename in pending_renames:
+                old_path = self.current_dir / rename["old"]
+                new_path = self.current_dir / rename["new"]
                 
-                old_path.rename(new_path)
-                success_count += 1
-            except Exception as e:
-                errors.append(f"Failed to rename {rename['old']}: {str(e)}")
+                try:
+                    if not old_path.exists():
+                        # Check if it was already renamed
+                        if rename["old"] in completed:
+                            continue
+                        errors.append(f"File not found: {rename['old']}")
+                        continue
+                    
+                    # Check if it's a case-only rename (same file, different case)
+                    is_case_only_rename = False
+                    if not case_sensitive and old_path.resolve() == new_path.resolve():
+                        is_case_only_rename = True
+                    
+                    # Check if target exists and is not being renamed
+                    if new_path.exists() and not is_case_only_rename and rename["new"] not in rename_map:
+                        errors.append(f"Target already exists: {rename['new']}")
+                        continue
+                    
+                    # If target exists but will be renamed, defer this rename (unless case-only)
+                    if new_path.exists() and not is_case_only_rename and rename["new"] in rename_map and rename["new"] not in completed:
+                        still_pending.append(rename)
+                        continue
+                    
+                    # Perform the rename
+                    # For case-only renames on Windows, use a temporary intermediate name
+                    if is_case_only_rename and old_path.name != new_path.name:
+                        temp_name = f"_smartrename_temp_case_{success_count}_{rename['new']}"
+                        temp_path = self.current_dir / temp_name
+                        old_path.rename(temp_path)
+                        temp_path.rename(new_path)
+                    else:
+                        old_path.rename(new_path)
+                    
+                    completed.add(rename["old"])
+                    success_count += 1
+                    made_progress = True
+                    
+                except Exception as e:
+                    errors.append(f"Failed to rename {rename['old']}: {str(e)}")
+            
+            pending_renames = still_pending
+            
+            # If we didn't make progress, we have a circular dependency or deadlock
+            if not made_progress and pending_renames:
+                # Use temporary names to break deadlock
+                for rename in pending_renames:
+                    old_path = self.current_dir / rename["old"]
+                    if old_path.exists():
+                        temp_name = f"_smartrename_temp_{success_count}_{rename['new']}"
+                        temp_path = self.current_dir / temp_name
+                        try:
+                            old_path.rename(temp_path)
+                            temp_path.rename(self.current_dir / rename["new"])
+                            completed.add(rename["old"])
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Failed to rename {rename['old']}: {str(e)}")
+                break
         
         return success_count, errors
     
@@ -399,7 +512,28 @@ When ready to rename, output ONLY the JSON object, nothing else."""
         print("  SMART RENAME - AI-Powered File Renaming Tool")
         print(f"  Version {VERSION}")
         print("=" * 60)
-        print(f"Working directory: {self.current_dir}\n")
+        print(f"Current directory: {self.current_dir}")
+        
+        # Ask if user wants to use a different directory
+        print("\nPress Enter to use current directory, or enter folder path:")
+        user_path = input("> ").strip()
+        
+        if user_path:
+            # User provided a path
+            if os.path.isdir(user_path):
+                self.current_dir = Path(user_path)
+                print(f"Working directory: {self.current_dir}")
+            else:
+                print(f"❌ Error: '{user_path}' is not a valid directory")
+                return
+        else:
+            print(f"Working directory: {self.current_dir}")
+        
+        # Ask if user wants to include folders (only if folders exist)
+        if self.has_folders():
+            choice = input("\nInclude folders for renaming? (y/n): ").strip().lower()
+            self.include_folders = (choice == 'y')
+        print()
         
         # Scan files
         try:
@@ -409,10 +543,12 @@ When ready to rename, output ONLY the JSON object, nothing else."""
             return
         
         if not self.files:
-            print("No files found in current directory.")
+            item_type = "files or folders" if self.include_folders else "files"
+            print(f"No {item_type} found in directory.")
             return
         
-        print(f"Found {len(self.files)} file(s)")
+        item_type = "item(s)" if self.include_folders else "file(s)"
+        print(f"Found {len(self.files)} {item_type}")
         
         # Check file count limits
         if len(self.files) > MAX_FILES_HARD_LIMIT:
@@ -502,8 +638,19 @@ When ready to rename, output ONLY the JSON object, nothing else."""
                     else:
                         print(f"\n💡 Like this tool? Check out more at: {WEBSITE}")
                     
-                    # Refresh file list
-                    self.files = self.scan_files()
+                    # Refresh file list after successful renames
+                    try:
+                        old_count = len(self.files)
+                        self.files = self.scan_files()
+                        if len(self.files) != old_count:
+                            print(f"\nRefreshed: Now showing {len(self.files)} {item_type}")
+                        else:
+                            print(f"\nFile list refreshed")
+                    except Exception as e:
+                        print(f"\n⚠️  Warning: Could not refresh file list: {e}")
+                    
+                    # Clear conversation history to work with fresh context
+                    self.conversation_history = []
                     print()
                 else:
                     # Plain text response
@@ -518,7 +665,16 @@ When ready to rename, output ONLY the JSON object, nothing else."""
 
 def main():
     try:
-        app = SmartRename()
+        target_dir = None
+        
+        # Check for command-line folder path
+        if len(sys.argv) > 1:
+            target_dir = sys.argv[1]
+            if not os.path.isdir(target_dir):
+                print(f"❌ Error: '{target_dir}' is not a valid directory")
+                sys.exit(1)
+        
+        app = SmartRename(target_dir)
         app.run()
     except KeyboardInterrupt:
         print("\n\nSetup cancelled.")

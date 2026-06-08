@@ -6,7 +6,7 @@ An AI-powered file renaming tool that understands natural language. Stop wasting
 
 **Want to skip the setup?** Download the standalone executable:
 
-👉 [SmartRename.exe (10.3 MB)](https://github.com/Ansh-Singh-2000/smartrename/releases/latest)
+👉 [SmartRename_v1.1.0.exe (10.3 MB)](https://github.com/Ansh-Singh-2000/smartrename/releases/download/v1.1.0/SmartRename_v1.1.0.exe)
 
 - ✅ No Python installation required
 - ✅ No dependencies to install
@@ -15,10 +15,14 @@ An AI-powered file renaming tool that understands natural language. Stop wasting
 
 On first run, you'll be prompted for a free Groq API key (takes 1 minute to get).
 
+**Previous Versions:** [v1.0.0](https://github.com/Ansh-Singh-2000/smartrename/releases/tag/v1.0.0)
+
 ## Features ✨
 
 - **Natural Language Interface** - Just describe what you want: "capitalize first letter of all files ending with 5"
 - **Smart AI** - Powered by Groq's fast LLM (llama-3.3-70b-versatile)
+- **Flexible Directory** - Run from any folder or specify target folder path
+- **Folder Renaming** - Works with files AND folders (optional)
 - **Safe Operations** - Preview changes, collision detection, automatic backup logs
 - **Interactive** - AI asks for clarification when needed
 - **Production Ready** - Comprehensive error handling and edge case coverage
@@ -27,11 +31,12 @@ On first run, you'll be prompted for a free Groq API key (takes 1 minute to get)
 
 ### Option 1: Use the Executable (Easiest)
 
-1. Download [SmartRename.exe](https://github.com/Ansh-Singh-2000/smartrename/releases/latest)
-2. Place it in any folder with files you want to rename
+1. Download [SmartRename_v1.1.0.exe](https://github.com/Ansh-Singh-2000/smartrename/releases/download/v1.1.0/SmartRename_v1.1.0.exe)
+2. Place it anywhere on your computer
 3. Double-click to run
-4. Enter your Groq API key when prompted (first run only)
-5. Start renaming!
+4. Enter folder path or press Enter for current directory
+5. Enter your Groq API key when prompted (first run only)
+6. Start renaming!
 
 ### Option 2: Run from Source
 
@@ -44,7 +49,11 @@ pip install -r requirements.txt
 ### 2. Run the Tool
 
 ```bash
+# Run in current directory
 python smart_rename.py
+
+# Or specify a target folder
+python smart_rename.py "C:\path\to\folder"
 ```
 
 On first run, you'll be prompted to enter your Groq API key:
@@ -55,14 +64,36 @@ On first run, you'll be prompted to enter your Groq API key:
 
 Your API key will be securely saved in `~/.smartrename/config.json` and reused automatically.
 
+**New in v1.1.0:**
+- The tool will ask if you want to include folders for renaming
+- Choose 'y' to rename both files and folders
+- Choose 'n' for files only (default behavior)
+
 ## Usage Examples 💡
 
+### Basic Workflow
 ```
+# Step 1: Run the tool
+python smart_rename.py
+
+# Step 2: Choose directory
+Press Enter to use current directory, or enter folder path:
+> D:\Documents\Photos    (or just press Enter for current dir)
+
+# Step 3: Choose if folders should be included
+Include folders for renaming? (y/n): n
+
+Found 15 file(s)
+
+# Step 4: Make your request
 You: capitalize first letter of all files
 AI: [Shows preview of changes]
 Proceed with rename? (y/n): y
 ✓ Successfully renamed 15/15 file(s)
+```
 
+### File Renaming Examples
+```
 You: replace spaces with underscores in all txt files
 AI: [Shows preview]
 
@@ -71,6 +102,26 @@ AI: [Shows preview]
 
 You: rename all images to img_001, img_002, etc
 AI: [Shows preview]
+```
+
+### Folder Renaming
+```
+Include folders for renaming? (y/n): y
+
+You: add "project_" prefix to all folders
+AI: [Shows preview of folder renames]
+
+You: replace spaces with dashes in folder names
+AI: [Shows preview]
+```
+
+### Using Command-Line Argument
+```bash
+# You can also specify folder directly via command line
+python smart_rename.py "D:\Documents\Photos"
+
+# Or with executable
+SmartRename_v1.1.0.exe "C:\Users\Name\Downloads"
 ```
 
 ## Safety Features 🛡️
@@ -159,4 +210,4 @@ Need help? Feel free to reach out!
 
 ---
 
-**Pro Tip**: Run the tool in the directory you want to rename files in. It only affects the current directory (non-recursive).
+**Pro Tip**: At startup, just press Enter to work in current directory, or type any folder path to work there. Enable folder renaming to rename subfolders too!
